@@ -1,0 +1,20 @@
+[project]
+name = "llama-weather-oracle"
+version = "0.1.0"
+description = "A tiny Ollama-powered weather assistant with a funny personality."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "ollama>=0.6.0",
+    "requests>=2.32.0",
+]
+
+[project.scripts]
+llama-weather = "llama_weather_oracle.weather_oracle:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/llama_weather_oracle"]
