@@ -1,5 +1,9 @@
+anthropic
 beautifulsoup4
+google-genai
 ipython
+langchain-openai
+litellm
 openai
 python-dotenv
 requests
