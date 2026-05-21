@@ -1,6 +1,7 @@
 anthropic
 beautifulsoup4
 google-genai
+gradio
 ipython
 langchain-openai
 litellm
