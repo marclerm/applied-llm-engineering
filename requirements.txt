@@ -6,6 +6,7 @@ ipython
 langchain-openai
 litellm
 openai
+pillow
 python-dotenv
 requests
 tiktoken
