@@ -5,6 +5,8 @@ gradio
 ipython
 langchain-openai
 litellm
+matplotlib
+networkx
 openai
 pillow
 python-dotenv
