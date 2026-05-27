@@ -5,3 +5,6 @@ __pycache__/
 .env
 .gradio/
 *.db
+main
+main.cpp
+main.exe
