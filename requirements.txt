@@ -11,6 +11,7 @@ langchain-text-splitters
 litellm
 matplotlib
 networkx
+nbformat
 numpy
 openai
 pillow
