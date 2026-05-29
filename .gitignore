@@ -5,6 +5,8 @@ __pycache__/
 .env
 .gradio/
 *.db
+vector_db/
+lectures/week-five/vector_db/
 main
 main.cpp
 main.rs
