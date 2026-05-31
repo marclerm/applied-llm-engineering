@@ -20,4 +20,5 @@ python-dotenv
 requests
 scikit-learn
 sentence-transformers
+tenacity
 tiktoken

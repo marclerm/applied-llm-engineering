@@ -7,6 +7,8 @@ __pycache__/
 *.db
 vector_db/
 lectures/week-five/vector_db/
+preprocessed_db/
+lectures/week-five/preprocessed_db/
 main
 main.cpp
 main.rs

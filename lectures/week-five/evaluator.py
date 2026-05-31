@@ -20,9 +20,11 @@ in-memory store so your saved vector_db is never overwritten.
 """
 
 import os
+import sys
 import glob
 import json
 import math
+import importlib
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -53,6 +55,7 @@ DEFAULT_CHUNK_SIZE = 500
 DEFAULT_CHUNK_OVERLAP = 200
 
 HERE = Path(__file__).parent
+sys.path.insert(0, str(HERE))  # so `implementation.answer` / `pro_implementation.answer` import cleanly
 DB_NAME = str(HERE / "vector_db")
 KNOWLEDGE_BASE = str(HERE / "knowledge-base")
 TESTS_FILE = str(HERE / "tests.jsonl")
@@ -155,6 +158,70 @@ def answer_question(question: str) -> tuple[str, list[Document]]:
 
 
 # ---------------------------------------------------------------------------
+# Pipeline selection: evaluate the built-in tunable pipeline, or one of the
+# external answer modules (basic / pro). All three expose the same interface:
+#   fetch_context(question)            -> list of chunks (each has .page_content + .metadata)
+#   answer_question(question, history) -> (answer_text, chunks)
+# ---------------------------------------------------------------------------
+
+PIPELINE_BUILTIN = "Built-in (tunable)"
+PIPELINE_BASIC = "Basic — implementation.answer"
+PIPELINE_PRO = "Pro — pro_implementation.answer"
+PIPELINE_CHOICES = [PIPELINE_BUILTIN, PIPELINE_BASIC, PIPELINE_PRO]
+
+_MODULE_CACHE: dict[str, object] = {}
+
+
+def _doc_type(metadata: dict) -> str:
+    """Robustly read a chunk's section: basic uses 'doc_type', pro uses 'type'."""
+    return metadata.get("doc_type") or metadata.get("type") or "unknown"
+
+
+def _load_module(modname: str):
+    """Import an external answer module on demand (and cache it)."""
+    if modname not in _MODULE_CACHE:
+        _MODULE_CACHE[modname] = importlib.import_module(modname)
+    return _MODULE_CACHE[modname]
+
+
+def _prepare_builtin(chunk_size, chunk_overlap, k, progress):
+    """Validate settings and (re)build the built-in vector store if needed. Returns ints."""
+    chunk_size, chunk_overlap, k = int(chunk_size), int(chunk_overlap), int(k)
+    if chunk_overlap >= chunk_size:
+        raise gr.Error("Chunk overlap must be smaller than chunk size.")
+    needs_build = (chunk_size, chunk_overlap) not in _STORE_CACHE and not (
+        (chunk_size, chunk_overlap) == (DEFAULT_CHUNK_SIZE, DEFAULT_CHUNK_OVERLAP) and os.path.exists(DB_NAME)
+    )
+    if needs_build:
+        progress(0, desc=f"Rebuilding vector store (chunk {chunk_size}/{chunk_overlap}) — re-embedding…")
+    configure_pipeline(chunk_size, chunk_overlap, k)
+    return chunk_size, chunk_overlap, k
+
+
+def get_pipeline(choice, chunk_size, chunk_overlap, k, progress):
+    """
+    Resolve the chosen pipeline to (fetch_fn, answer_fn, metric_k, settings_line).
+
+    - Built-in: honours the chunk size / overlap / k sliders (rebuilding if needed).
+    - Basic / Pro: import the external module; the sliders don't apply (those
+      modules have their own fixed config), so metric_k comes from the module.
+    """
+    if choice == PIPELINE_BASIC:
+        progress(0, desc="Loading basic pipeline (implementation.answer)…")
+        mod = _load_module("implementation.answer")
+        metric_k = getattr(mod, "RETRIEVAL_K", 10)
+        return mod.fetch_context, mod.answer_question, metric_k, f"{PIPELINE_BASIC}, k={metric_k}"
+    if choice == PIPELINE_PRO:
+        progress(0, desc="Loading pro pipeline (pro_implementation.answer)…")
+        mod = _load_module("pro_implementation.answer")
+        metric_k = getattr(mod, "FINAL_K", 10)
+        return mod.fetch_context, mod.answer_question, metric_k, f"{PIPELINE_PRO}, k={metric_k}"
+    # Default: the built-in tunable pipeline.
+    chunk_size, chunk_overlap, k = _prepare_builtin(chunk_size, chunk_overlap, k, progress)
+    return fetch_context, answer_question, k, f"built-in · chunk {chunk_size}/{chunk_overlap}, k={k}"
+
+
+# ---------------------------------------------------------------------------
 # Test set
 # ---------------------------------------------------------------------------
 
@@ -240,7 +307,7 @@ def score_retrieval(test: TestQuestion, retrieved_docs: list[Document], k: int) 
 
 
 def evaluate_retrieval(test: TestQuestion, k: int = DEFAULT_K) -> RetrievalEval:
-    """Evaluate retrieval performance for a single test question."""
+    """Evaluate retrieval performance for a single test question (built-in pipeline)."""
     return score_retrieval(test, fetch_context(test.question), k)
 
 
@@ -267,9 +334,9 @@ JUDGE_SYSTEM_PROMPT = (
 )
 
 
-def evaluate_answer(test: TestQuestion) -> tuple[AnswerEval, str, list[Document]]:
-    """Evaluate answer quality using LLM-as-a-judge."""
-    generated_answer, retrieved_docs = answer_question(test.question)
+def evaluate_answer(test: TestQuestion, answer_fn=answer_question) -> tuple[AnswerEval, str, list]:
+    """Evaluate answer quality using LLM-as-a-judge, against the given answer pipeline."""
+    generated_answer, retrieved_docs = answer_fn(test.question)
 
     judge_prompt = f"""Question:
 {test.question}
@@ -294,27 +361,27 @@ Provide detailed feedback and scores from 1 (very poor) to 5 (ideal) for each di
     return answer_eval, generated_answer, retrieved_docs
 
 
-def evaluate_all_retrieval(limit: int | None, k: int):
-    """Evaluate retrieval per test, yielding (test, result, doc_types, progress)."""
+def evaluate_all_retrieval(limit: int | None, k: int, fetch_fn):
+    """Evaluate retrieval per test with `fetch_fn`, yielding (test, result, doc_types, progress)."""
     tests = load_tests()
     if limit:
         tests = tests[:limit]
     total = len(tests)
     for index, test in enumerate(tests):
-        docs = fetch_context(test.question)
+        docs = fetch_fn(test.question)
         result = score_retrieval(test, docs, k)
-        doc_types = [d.metadata.get("doc_type", "unknown") for d in docs]
+        doc_types = [_doc_type(d.metadata) for d in docs]
         yield test, result, doc_types, (index + 1) / total
 
 
-def evaluate_all_answers(limit: int | None):
-    """Evaluate answers per test, yielding (test, result, generated_answer, progress)."""
+def evaluate_all_answers(limit: int | None, answer_fn):
+    """Evaluate answers per test with `answer_fn`, yielding (test, result, generated_answer, progress)."""
     tests = load_tests()
     if limit:
         tests = tests[:limit]
     total = len(tests)
     for index, test in enumerate(tests):
-        result, generated_answer, _ = evaluate_answer(test)
+        result, generated_answer, _ = evaluate_answer(test, answer_fn)
         yield test, result, generated_answer, (index + 1) / total
 
 
@@ -393,7 +460,7 @@ def _pretty(name: str) -> str:
     return name.replace("_", " ")
 
 
-def summarize_retrieval(avg, cat_summary, doc_type_counts, count, k, chunk_size, chunk_overlap) -> str:
+def summarize_retrieval(avg, cat_summary, doc_type_counts, count, k, settings_line) -> str:
     """A human-readable narrative interpreting the retrieval run."""
     g_cov, g_mrr, g_ndcg = grade(avg["coverage"], "coverage"), grade(avg["mrr"], "mrr"), grade(avg["ndcg"], "ndcg")
     headline = _overall_verdict([g_cov, g_mrr, g_ndcg], "retrieval")
@@ -417,8 +484,8 @@ def summarize_retrieval(avg, cat_summary, doc_type_counts, count, k, chunk_size,
 
     if g_cov == "poor":
         rec = ("**Coverage is the bottleneck** — for many questions the right documents simply aren't "
-               f"being retrieved. Try a larger **retrieval k** (currently {k}), or experiment with "
-               "**chunk size / overlap** above so the right text lands together in a chunk.")
+               f"being retrieved. Try a larger **retrieval k** (currently {k}), different **chunking**, "
+               "or switch the **RAG pipeline** above (e.g. the Pro pipeline rewrites the query and reranks).")
     elif g_mrr != "good" and g_cov != "poor":
         rec = ("The right content **is** retrieved but tends to sit **lower in the ranking** (coverage is "
                "healthier than MRR). Smaller, more focused chunks or a re-ranker would help.")
@@ -428,8 +495,7 @@ def summarize_retrieval(avg, cat_summary, doc_type_counts, count, k, chunk_size,
 
     lines = [
         "## 📝 Retrieval summary",
-        f"_{count} test question{'s' if count != 1 else ''} · chunk size {chunk_size}, "
-        f"overlap {chunk_overlap}, retrieval k = {k}._",
+        f"_{count} test question{'s' if count != 1 else ''} · {settings_line}._",
         "",
         headline,
         "",
@@ -456,7 +522,7 @@ def summarize_retrieval(avg, cat_summary, doc_type_counts, count, k, chunk_size,
     return "\n".join(lines)
 
 
-def summarize_answer(avg, cat_summary, count, k, chunk_size, chunk_overlap) -> str:
+def summarize_answer(avg, cat_summary, count, k, settings_line) -> str:
     """A human-readable narrative interpreting the answer-quality run."""
     g_acc = grade(avg["accuracy"], "accuracy")
     g_comp = grade(avg["completeness"], "completeness")
@@ -489,8 +555,7 @@ def summarize_answer(avg, cat_summary, count, k, chunk_size, chunk_overlap) -> s
 
     lines = [
         "## 📝 Answer-quality summary",
-        f"_LLM-as-a-judge over {count} test question{'s' if count != 1 else ''} (scale 1–5) · "
-        f"chunk size {chunk_size}, overlap {chunk_overlap}, retrieval k = {k}._",
+        f"_LLM-as-a-judge over {count} test question{'s' if count != 1 else ''} (scale 1–5) · {settings_line}._",
         "",
         headline,
         "",
@@ -554,30 +619,16 @@ def kb_bar(doc_type_counts: Counter):
 # ---------------------------------------------------------------------------
 
 
-def _prepare_pipeline(chunk_size, chunk_overlap, k, progress):
-    """Validate settings and (re)build the vector store if needed. Returns ints."""
-    chunk_size, chunk_overlap, k = int(chunk_size), int(chunk_overlap), int(k)
-    if chunk_overlap >= chunk_size:
-        raise gr.Error("Chunk overlap must be smaller than chunk size.")
-    needs_build = (chunk_size, chunk_overlap) not in _STORE_CACHE and not (
-        (chunk_size, chunk_overlap) == (DEFAULT_CHUNK_SIZE, DEFAULT_CHUNK_OVERLAP) and os.path.exists(DB_NAME)
-    )
-    if needs_build:
-        progress(0, desc=f"Rebuilding vector store (chunk {chunk_size}/{chunk_overlap}) — re-embedding…")
-    configure_pipeline(chunk_size, chunk_overlap, k)
-    return chunk_size, chunk_overlap, k
-
-
-def run_retrieval_evaluation(chunk_size, chunk_overlap, k, num_tests, progress=gr.Progress()):
-    """Run retrieval evaluation with the chosen pipeline settings over the first N tests."""
-    chunk_size, chunk_overlap, k = _prepare_pipeline(chunk_size, chunk_overlap, k, progress)
+def run_retrieval_evaluation(pipeline_choice, chunk_size, chunk_overlap, k, num_tests, progress=gr.Progress()):
+    """Run retrieval evaluation with the chosen pipeline + settings over the first N tests."""
+    fetch_fn, _, metric_k, settings_line = get_pipeline(pipeline_choice, chunk_size, chunk_overlap, k, progress)
     limit = int(num_tests)
     totals = {"mrr": 0.0, "ndcg": 0.0, "coverage": 0.0}
     per_cat = defaultdict(lambda: defaultdict(list))
     doc_type_counts = Counter()
     count = 0
 
-    for test, result, doc_types, prog in evaluate_all_retrieval(limit, k):
+    for test, result, doc_types, prog in evaluate_all_retrieval(limit, metric_k, fetch_fn):
         count += 1
         totals["mrr"] += result.mrr
         totals["ndcg"] += result.ndcg
@@ -594,8 +645,7 @@ def run_retrieval_evaluation(chunk_size, chunk_overlap, k, num_tests, progress=g
         metric_card("MRR", avg["mrr"], "mrr", ""),
         metric_card("nDCG", avg["ndcg"], "ndcg", ""),
     ]
-    note = f"chunk {chunk_size}/{chunk_overlap}, k={k}"
-    summary = cards_row(cards, count, note)
+    summary = cards_row(cards, count, settings_line)
 
     cat_summary = {
         cat: {"MRR": sum(m["MRR"]) / len(m["MRR"]),
@@ -610,20 +660,20 @@ def run_retrieval_evaluation(chunk_size, chunk_overlap, k, num_tests, progress=g
     cat_fig = category_bar(cat_rows, ["MRR", "nDCG", "Coverage %"],
                            "Retrieval metrics by question category (0–1)", [0, 1])
     kb_fig = kb_bar(doc_type_counts)
-    notes = summarize_retrieval(avg, cat_summary, doc_type_counts, count, k, chunk_size, chunk_overlap)
+    notes = summarize_retrieval(avg, cat_summary, doc_type_counts, count, metric_k, settings_line)
     return summary, cat_fig, kb_fig, notes
 
 
-def run_answer_evaluation(chunk_size, chunk_overlap, k, num_tests, progress=gr.Progress()):
-    """Run answer-quality evaluation with the chosen pipeline settings over the first N tests."""
-    chunk_size, chunk_overlap, k = _prepare_pipeline(chunk_size, chunk_overlap, k, progress)
+def run_answer_evaluation(pipeline_choice, chunk_size, chunk_overlap, k, num_tests, progress=gr.Progress()):
+    """Run answer-quality evaluation with the chosen pipeline + settings over the first N tests."""
+    _, answer_fn, metric_k, settings_line = get_pipeline(pipeline_choice, chunk_size, chunk_overlap, k, progress)
     limit = int(num_tests)
     totals = {"accuracy": 0.0, "completeness": 0.0, "relevance": 0.0}
     per_cat = defaultdict(lambda: defaultdict(list))
     worst = []
     count = 0
 
-    for test, result, answer, prog in evaluate_all_answers(limit):
+    for test, result, answer, prog in evaluate_all_answers(limit, answer_fn):
         count += 1
         totals["accuracy"] += result.accuracy
         totals["completeness"] += result.completeness
@@ -647,8 +697,7 @@ def run_answer_evaluation(chunk_size, chunk_overlap, k, num_tests, progress=gr.P
         metric_card("Completeness", avg["completeness"], "completeness", "/5"),
         metric_card("Relevance", avg["relevance"], "relevance", "/5"),
     ]
-    note = f"chunk {chunk_size}/{chunk_overlap}, k={k}"
-    summary = cards_row(cards, count, note)
+    summary = cards_row(cards, count, settings_line)
 
     cat_summary = {
         cat: {"Accuracy": sum(m["Accuracy"]) / len(m["Accuracy"]),
@@ -661,7 +710,7 @@ def run_answer_evaluation(chunk_size, chunk_overlap, k, num_tests, progress=gr.P
                            "Answer quality by question category (1–5)", [1, 5])
 
     worst_df = pd.DataFrame(sorted(worst, key=lambda r: (r["Acc"], r["Comp"], r["Rel"]))[:10])
-    notes = summarize_answer(avg, cat_summary, count, k, chunk_size, chunk_overlap)
+    notes = summarize_answer(avg, cat_summary, count, metric_k, settings_line)
     return summary, cat_fig, worst_df, notes
 
 
@@ -678,6 +727,13 @@ Evaluation turns RAG from guesswork into engineering: with these numbers you can
 only question that matters when you change something — *did it get better or worse?*
 
 ### ⚙️ Pipeline settings you can tune
+- **RAG pipeline** — *which* answer pipeline to evaluate:
+  - **Built-in (tunable)** — the dashboard's own pipeline, configured by the sliders below.
+  - **Basic (`implementation.answer`)** — the Day 1–4 LangChain pipeline reading `vector_db`.
+  - **Pro (`pro_implementation.answer`)** — the Day 5 advanced pipeline reading `preprocessed_db`:
+    query rewriting + dual retrieval + reranking. It's slower and costs more per question (several
+    LLM calls each), so use a small test count first. The sliders below don't apply to Basic/Pro —
+    those modules carry their own fixed configuration.
 - **Chunk size** — characters per chunk when documents are split. Smaller = more focused but more
   fragmented; larger = more context per chunk but noisier retrieval.
 - **Chunk overlap** — characters shared between consecutive chunks, so a fact split across a boundary
@@ -732,6 +788,12 @@ def build_app() -> gr.Blocks:
         # --- Shared pipeline settings -----------------------------------------
         with gr.Group():
             gr.Markdown("### ⚙️ Pipeline settings")
+            pipeline = gr.Dropdown(
+                PIPELINE_CHOICES, value=PIPELINE_BUILTIN, label="RAG pipeline to evaluate",
+                info=("Built-in: the tunable pipeline configured by the sliders below. "
+                      "Basic: implementation.answer. Pro: pro_implementation.answer "
+                      "(query rewriting + dual retrieval + reranking — slower/costlier per question)."),
+            )
             with gr.Row():
                 chunk_size = gr.Slider(
                     100, 2000, value=DEFAULT_CHUNK_SIZE, step=50, label="Chunk size",
@@ -745,10 +807,31 @@ def build_app() -> gr.Blocks:
                     1, 20, value=DEFAULT_K, step=1, label="Retrieval k",
                     info="How many chunks to retrieve per query. Free to change — no rebuild.",
                 )
-            gr.Markdown(
+            settings_caption = gr.Markdown(
                 "_Changing chunk size/overlap re-embeds the knowledge base into a temporary in-memory "
                 "store (takes a moment, uses OpenAI embeddings). Your saved `vector_db` is never overwritten._"
             )
+
+        # The sliders only apply to the built-in pipeline; grey them out otherwise.
+        def _toggle_sliders(choice):
+            builtin = choice == PIPELINE_BUILTIN
+            cap = (
+                "_Changing chunk size/overlap re-embeds the knowledge base into a temporary in-memory "
+                "store (takes a moment, uses OpenAI embeddings). Your saved `vector_db` is never overwritten._"
+                if builtin else
+                f"_The **{choice}** pipeline uses its own fixed configuration — the sliders above don't apply._"
+            )
+            return (
+                gr.update(interactive=builtin),
+                gr.update(interactive=builtin),
+                gr.update(interactive=builtin),
+                gr.update(value=cap),
+            )
+
+        pipeline.change(
+            _toggle_sliders, inputs=pipeline,
+            outputs=[chunk_size, chunk_overlap, k_slider, settings_caption],
+        )
 
         with gr.Tabs():
             # --- Retrieval tab -------------------------------------------------
@@ -784,12 +867,12 @@ def build_app() -> gr.Blocks:
 
         r_button.click(
             run_retrieval_evaluation,
-            inputs=[chunk_size, chunk_overlap, k_slider, r_slider],
+            inputs=[pipeline, chunk_size, chunk_overlap, k_slider, r_slider],
             outputs=[r_summary, r_cat_plot, r_kb_plot, r_notes],
         )
         a_button.click(
             run_answer_evaluation,
-            inputs=[chunk_size, chunk_overlap, k_slider, a_slider],
+            inputs=[pipeline, chunk_size, chunk_overlap, k_slider, a_slider],
             outputs=[a_summary, a_cat_plot, a_table, a_notes],
         )
 

@@ -20,7 +20,10 @@ from dotenv import load_dotenv
 # Reuse the RAG logic we already built — answer_question returns
 # (answer_text, context_documents). This import requires app.py to sit
 # alongside the implementation/ folder (i.e. in lectures/week-five/).
-from implementation.answer import answer_question
+
+#from implementation.answer import answer_question
+
+from pro_implementation.answer import answer_question
 
 # Load OPENAI_API_KEY (etc.) from .env.
 load_dotenv(override=True)
