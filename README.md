@@ -81,10 +81,14 @@ RAG, LoRA and AI Agents"** by **Ed Donner** on Udemy.
   - `pro_implementation/` — the production pipeline: parallel LLM chunking, retry/backoff, dual
     retrieval, merge + rerank.
   - `app.py` — a Gradio chat app on top of the RAG pipeline.
-  - `evaluator.py` — a **RAG evaluation dashboard** (Gradio + Plotly) that can score the built-in,
-    basic, or pro pipeline, with tunable chunk size / overlap / k and human-readable summaries.
+  - `evaluation/` + `evaluator.py` — the course **RAG evaluation dashboard** (retrieval metrics +
+    LLM-as-a-judge) over the 150-question test set.
 
 ### 🧪 Extras
+- `homework-challenges/rag-evaluation-dashboard/` — **my own extended RAG evaluation dashboard**:
+  tunable chunk size / overlap / k, a pipeline selector (built-in / basic / pro), per-category and
+  per-knowledge-base breakdowns, and human-readable summary reports. (Builds on the course version
+  in `lectures/week-five/`.)
 - `homework-challenges/local-llms/` — an Ollama webpage-summarizer challenge.
 - `projects/llama-weather-oracle/` — a small custom CLI project: live weather (Open-Meteo) +
   a local Llama response (Ollama) with an editable personality prompt.
