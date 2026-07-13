@@ -84,6 +84,28 @@ RAG, LoRA and AI Agents"** by **Ed Donner** on Udemy.
   - `evaluation/` + `evaluator.py` — the course **RAG evaluation dashboard** (retrieval metrics +
     LLM-as-a-judge) over the 150-question test set.
 
+### 🗓️ Week 6 — "The Price is Right" capstone (data → baselines → deep learning & LLMs)
+`Amazon Reviews dataset` · `data curation` · `LLM data pre-processing` · `Groq Batch API` · `litellm` · `traditional ML` · `scikit-learn` · `XGBoost` · `PyTorch` · `frontier LLMs (zero-shot)` · `evaluation harness`
+A week-long capstone: predict a product's price from its description, trained on a scrape of
+Amazon data. (Order of play: curation → pre-processing → baselines/traditional ML → deep
+learning & LLMs → fine-tuning a frontier model.)
+- **1 — Data curation:** download & scrub the McAuley Amazon-Reviews categories, build a
+  price- and category-balanced sample, and push a curated dataset to the Hub.
+- **2 — Data pre-processing:** rewrite every messy product into a clean, standard format with an
+  LLM, run at scale through **Groq's Batch API**, and publish the pre-processed dataset.
+- **3 — Evaluation, baselines & traditional ML:** a shared `evaluate` harness, trivial baselines
+  (random / average), then linear regression (hand features + bag-of-words), Random Forest and
+  XGBoost — all scored the same way for comparison.
+- **4 — Neural networks & LLMs:** a "human" baseline, a from-scratch **PyTorch** neural network on
+  bag-of-words features, then **frontier LLMs zero-shot** (GPT, Claude, Gemini, Grok via litellm) —
+  no training, just world knowledge, scored on the same test set.
+- **Supporting modules (`pricer/`):**
+  - `items.py` — the `Item` data model (+ HuggingFace push/load helpers).
+  - `parser.py` — `parse()`: clean one raw datapoint into an `Item` (or drop it).
+  - `loaders.py` — `ItemLoader`: download & curate a whole category in parallel.
+  - `batch.py` — the `Batch` class: split → upload → submit → poll → collect via the Groq Batch API.
+  - `evaluator.py` — the shared `evaluate`/`Tester` harness (per-item error, MSE, r², charts).
+
 ### 🧪 Extras
 - `homework-challenges/rag-evaluation-dashboard/` — **my own extended RAG evaluation dashboard**:
   tunable chunk size / overlap / k, a pipeline selector (built-in / basic / pro), per-category and
@@ -104,6 +126,7 @@ applied-llm-engineering/
 │   ├── week-three/    … open-source models & Hugging Face
 │   ├── week-four/     … code generation
 │   ├── week-five/     … RAG (notebooks + implementation, pro_implementation, app, evaluator)
+│   ├── week-six/      … "The Price is Right" capstone (notebooks + pricer/ package)
 │   └── utilities/     … shared helpers
 ├── homework-challenges/
 ├── projects/

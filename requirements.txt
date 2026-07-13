@@ -2,9 +2,11 @@ anthropic
 beautifulsoup4
 datasets
 google-genai
+groq
 huggingface-hub
 gradio
 ipython
+ipywidgets
 langchain-chroma
 langchain-community
 langchain-huggingface
@@ -18,9 +20,14 @@ numpy
 openai
 pillow
 plotly
+pydantic
 python-dotenv
 requests
 scikit-learn
 sentence-transformers
 tenacity
 tiktoken
+torch
+tqdm
+transformers
+xgboost

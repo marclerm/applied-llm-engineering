@@ -1,5 +1,6 @@
 .DS_Store
 .venv/
+.claude/
 __pycache__/
 *.py[cod]
 .env
@@ -13,3 +14,14 @@ main
 main.cpp
 main.rs
 main.exe
+
+# Week 6 — day 2 batch pre-processing artifacts (generated request/result files & state)
+lectures/week-six/jsonl/
+lectures/week-six/lite/
+lectures/week-six/full/
+lectures/week-six/batches.pkl
+
+# Week 6 — day 4 human-baseline CSVs and saved models
+lectures/week-six/human_in.csv
+lectures/week-six/human_out.csv
+lectures/week-six/*.joblib
