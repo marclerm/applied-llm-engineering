@@ -1,0 +1,17 @@
+chromadb
+datasets
+huggingface-hub
+ipykernel
+ipywidgets
+jupyterlab
+litellm
+modal
+numpy
+pandas
+plotly
+python-dotenv
+scikit-learn
+sentence-transformers
+torch
+tqdm
+typing-extensions

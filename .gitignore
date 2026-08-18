@@ -10,6 +10,8 @@ vector_db/
 lectures/week-five/vector_db/
 preprocessed_db/
 lectures/week-five/preprocessed_db/
+lectures/week-eight/products_vectorstore/
+lectures/week-eight/*.pth
 main
 main.cpp
 main.rs

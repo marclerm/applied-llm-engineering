@@ -106,6 +106,26 @@ learning & LLMs → fine-tuning a frontier model.)
   - `batch.py` — the `Batch` class: split → upload → submit → poll → collect via the Groq Batch API.
   - `evaluator.py` — the shared `evaluate`/`Tester` harness (per-item error, MSE, r², charts).
 
+### 🗓️ Week 8 — Agents & cloud inference
+`Modal` · `cloud GPU inference` · `fine-tuned Llama` · `LiteLLM` · `agent architecture`
+- **1 — Modal and Specialist Agent:** run functions locally and remotely on Modal, serve the
+  fine-tuned price model as a deployed GPU service, preprocess product descriptions, and wrap the
+  remote model behind a focused `SpecialistAgent`.
+- **2 — RAG, Frontier and Ensemble Agents:** build a Chroma product vector store, retrieve similar
+  products as pricing context, compare the OpenAI RAG estimator with the Modal specialist and a
+  local neural network, then combine all three behind an `EnsembleAgent`.
+- **Supporting modules (`agents/`):**
+  - `agent.py` — shared logging base class for the Week 8 agents.
+  - `preprocessor.py` — converts raw product text into the standardized pricing prompt format.
+  - `specialist_agent.py` — calls the deployed Modal pricer through a small agent interface.
+  - `frontier_agent.py` — OpenAI price estimation grounded with similar Chroma products.
+  - `deep_neural_network.py`, `neural_network_agent.py` — local trained-model inference.
+  - `ensemble_agent.py` — weighted combination of frontier, specialist, and neural predictions.
+  - `items.py`, `evaluator.py` — dataset loading and shared pricing evaluation utilities.
+- `hello.py`, `llama.py` — introductory Modal local/remote and GPU examples.
+- `pricer_ephemeral.py`, `pricer_service.py`, `pricer_service2.py` — progressively move the
+  fine-tuned pricer from an ephemeral function to a persistent class-based service.
+
 ### 🧪 Extras
 - `homework-challenges/rag-evaluation-dashboard/` — **my own extended RAG evaluation dashboard**:
   tunable chunk size / overlap / k, a pipeline selector (built-in / basic / pro), per-category and
@@ -127,6 +147,8 @@ applied-llm-engineering/
 │   ├── week-four/     … code generation
 │   ├── week-five/     … RAG (notebooks + implementation, pro_implementation, app, evaluator)
 │   ├── week-six/      … "The Price is Right" capstone (notebooks + pricer/ package)
+│   ├── week-seven/    … fine-tuning preparation
+│   ├── week-eight/    … agents and Modal cloud inference
 │   └── utilities/     … shared helpers
 ├── homework-challenges/
 ├── projects/
@@ -163,6 +185,16 @@ Then open any notebook with Jupyter / VS Code, or run the week-five apps directl
 python lectures/week-five/app.py         # RAG chat app
 python lectures/week-five/evaluator.py   # RAG evaluation dashboard
 ```
+
+For Week 8, install its smaller local runtime and launch JupyterLab with:
+
+```bash
+pip install -r lectures/week-eight/requirements.txt
+jupyter lab lectures/week-eight/1-modal-and-specialist-agent.ipynb
+```
+
+Week 8 uses Python and Modal; Node.js and Vite are not required. The GPU-only model packages are
+declared in the Modal service files and are installed in Modal's remote Linux containers.
 
 > **Note:** generated vector stores (`vector_db/`, `preprocessed_db/`) and your `.env` are
 > git-ignored. Build the stores by running the relevant week-five ingest step / notebook first.
