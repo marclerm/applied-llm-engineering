@@ -1,5 +1,7 @@
 chromadb
 datasets
+feedparser
+gradio<5
 huggingface-hub
 ipykernel
 ipywidgets

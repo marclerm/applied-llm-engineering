@@ -114,6 +114,13 @@ learning & LLMs → fine-tuning a frontier model.)
 - **2 — RAG, Frontier and Ensemble Agents:** build a Chroma product vector store, retrieve similar
   products as pricing context, compare the OpenAI RAG estimator with the Modal specialist and a
   local neural network, then combine all three behind an `EnsembleAgent`.
+- **3 — Deal Scanner and Messaging Agents:** scrape current product deals from RSS feeds, use
+  OpenAI structured outputs to select well-described offers with clear prices, and optionally send
+  deal alerts through Pushover.
+- **4 — Autonomous Planning Agent:** define function/tool schemas, execute a bounded tool-calling
+  loop, then let an OpenAI planner coordinate the scanner, ensemble pricer, and optional messenger.
+- **5 — The Price Is Right Finale:** assemble the agents into a Gradio dashboard with persistent
+  deal memory, live logs, a product-embedding plot, scheduled scans, and selectable alerts.
 - **Supporting modules (`agents/`):**
   - `agent.py` — shared logging base class for the Week 8 agents.
   - `preprocessor.py` — converts raw product text into the standardized pricing prompt format.
@@ -122,6 +129,12 @@ learning & LLMs → fine-tuning a frontier model.)
   - `deep_neural_network.py`, `neural_network_agent.py` — local trained-model inference.
   - `ensemble_agent.py` — weighted combination of frontier, specialist, and neural predictions.
   - `items.py`, `evaluator.py` — dataset loading and shared pricing evaluation utilities.
+  - `deals.py`, `scanner_agent.py` — resilient RSS scraping and structured deal selection.
+  - `messaging_agent.py` — OpenAI-written deal alerts with optional Pushover delivery.
+  - `autonomous_planning_agent.py` — tool-calling orchestrator for the complete deal workflow.
+  - `planning_agent.py` — explicit scanner → ensemble → messenger production workflow.
+- `deal_agent_framework.py`, `memory.json` — orchestration and persistent surfaced-deal history.
+- `price_is_right.py`, `log_utils.py` — the final Gradio dashboard and HTML log formatting.
 - `hello.py`, `llama.py` — introductory Modal local/remote and GPU examples.
 - `pricer_ephemeral.py`, `pricer_service.py`, `pricer_service2.py` — progressively move the
   fine-tuned pricer from an ephemeral function to a persistent class-based service.
